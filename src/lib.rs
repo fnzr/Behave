@@ -10,11 +10,31 @@ pub enum Status {
     Failure,
 }
 
-pub enum Node {
-    Branch(Rc<RefCell<dyn C>>),
-    Leaf(Rc<RefCell<dyn B>>),
+type Node = Rc<RefCell<dyn NodeTrait>>;
+
+pub trait NodeTrait {
+    fn initialize(&mut self, bt: &mut BehaviorTree, self_rc: Node) {}
+
+    fn terminate(&mut self) {}
+
+    fn on_child_complete(&mut self, status: &Status, bt: &mut BehaviorTree, self_rc: Node) {}
+
+    fn tick(&mut self) -> &Status;
 }
-pub struct Action {}
+
+pub fn action<T>(node: T) -> Node
+where
+    T: NodeTrait + 'static,
+{
+    Rc::new(RefCell::new(node))
+}
+
+pub fn sequence(nodes: Vec<Node>) -> Node
+where
+{
+    Sequence::new(nodes)
+}
+
 pub struct Sequence {
     children: Vec<Node>,
     current_child: usize,
@@ -31,14 +51,10 @@ impl Sequence {
     }
 }
 
-impl C for Sequence {
-    fn initialize(
-        &mut self,
-        bt: &mut BehaviorTree,
-        self_rc: Rc<RefCell<dyn C>>,
-    ) {
+impl NodeTrait for Sequence {
+    fn initialize(&mut self, bt: &mut BehaviorTree, self_rc: Node) {
         if let Some(child) = self.children.get(0) {
-            enqueue_node(bt, child, self_rc);
+            enqueue_node(bt, child, Some(self_rc));
             self.status = Status::Running;
             self.current_child = 0;
         } else {
@@ -46,20 +62,15 @@ impl C for Sequence {
         }
     }
 
-    fn status(&self) -> &Status {        
+    fn tick(&mut self) -> &Status {
         &self.status
     }
 
-    fn on_child_complete(
-        &mut self,
-        result: &Status,
-        bt: &mut BehaviorTree,
-        self_rc: Rc<RefCell<dyn C>>,
-    ) {        
+    fn on_child_complete(&mut self, result: &Status, bt: &mut BehaviorTree, self_rc: Node) {
         if result == &Status::Success {
             self.current_child += 1;
             if let Some(child) = self.children.get_mut(self.current_child) {
-                enqueue_node(bt, child, self_rc);
+                enqueue_node(bt, child, Some(self_rc));
             } else {
                 self.status = Status::Success;
             }
@@ -69,135 +80,54 @@ impl C for Sequence {
     }
 }
 
-pub trait B {
-    fn tick(&mut self) -> &Status;
-    fn initialize(&mut self) {}
-    fn terminate(&mut self) {}
+fn enqueue_node(bt: &mut BehaviorTree, node: &Node, parent_rc: Option<Node>) {
+    let mut tmp = node.borrow_mut();
+    tmp.initialize(bt, node.clone());
+    bt.events.push_back((node.clone(), parent_rc));
 }
-
-pub trait C {
-    fn initialize(
-        &mut self,
-        bt: &mut BehaviorTree,
-        self_rc: Rc<RefCell<dyn C>>,
-    );
-
-    fn terminate(&mut self) {}
-
-    fn on_child_complete(
-        &mut self,
-        status: &Status,
-        bt: &mut BehaviorTree,
-        self_rc: Rc<RefCell<dyn C>>,
-    );
-
-    fn status(&self) -> &Status;
-}
-
-fn enqueue_node(
-    bt: &mut BehaviorTree,
-    node: &Node,
-    parent_rc: Rc<RefCell<dyn C>>,
-) {
-    match node {
-        Node::Branch(b) => {
-            let mut tmp = b.borrow_mut();
-            tmp.initialize(bt, b.clone());
-            bt.events.push_back((Node::Branch(b.clone()), parent_rc));
-        }
-        Node::Leaf(l) => {
-            let mut tmp = l.borrow_mut();
-            tmp.initialize();
-            bt.events.push_back((Node::Leaf(l.clone()), parent_rc));
-        }
-    }
-}
-
 pub struct BehaviorTree {
-    events: VecDeque<(Node, Rc<RefCell<dyn C>>)>,
-    fake_root: Rc<RefCell<FakeRoot>>,
-}
-
-pub struct FakeRoot {
-    status: Status,
-}
-
-impl C for FakeRoot {
-    fn initialize(
-        &mut self,
-        bt: &mut BehaviorTree,
-        self_rc: Rc<RefCell<dyn C>>,
-    ) {
-    }
-
-    fn on_child_complete(
-        &mut self,
-        status: &Status,
-        bt: &mut BehaviorTree,
-        self_rc: Rc<RefCell<dyn C>>,
-    ) {
-        //println!("Fake complete");
-        self.status = status.clone();
-    }
-
-    fn status(&self) -> &Status {
-        &self.status
-    }
+    events: VecDeque<(Node, Option<Node>)>,
 }
 
 impl BehaviorTree {
     pub fn new() -> Self {
         Self {
             events: VecDeque::new(),
-            fake_root: Rc::new(RefCell::new(FakeRoot {
-                status: Status::Invalid,
-            })),
         }
     }
     pub fn start(&mut self, root: &mut Node) {
-        enqueue_node(self, root, self.fake_root.clone());
+        enqueue_node(self, root, None);
     }
 
     pub fn step(&mut self) -> bool {
-        if let Some((node, parent)) = self.events.pop_front() {
-            let (result, new_node) = match node {
-                Node::Branch(b) => {
-                    let tmp = b.borrow_mut();
-                    
-                    (tmp.status().clone(), Node::Branch(b.clone()))                    
-                }
-                Node::Leaf(l) => {
-                    let mut tmp = l.borrow_mut();                    
-                    (tmp.tick().clone(), Node::Leaf(l.clone()))
-                }
-            };
-            if result == Status::Running {                
-                self.events.push_back((new_node, parent));
-            } else {
-                parent.borrow_mut().on_child_complete(
-                    &result,
-                    self,
-                    parent.clone()
-                );
+        if let Some((node, opt_parent)) = self.events.pop_front() {
+            let mut tmp = node.borrow_mut();
+            let result = tmp.tick();
+            let new_node = node.clone();
+
+            if result == &Status::Running {
+                self.events.push_back((new_node, opt_parent));
+            } else if let Some(parent) = opt_parent {
+                parent
+                    .borrow_mut()
+                    .on_child_complete(&result, self, parent.clone());
             }
             true
-        }
-        else {
+        } else {
             false
-        }        
+        }
     }
 }
 
 pub struct PrintEven {
-    x: Rc<RefCell<i32>>
+    x: Rc<RefCell<i32>>,
 }
 
-impl B for PrintEven {
+impl NodeTrait for PrintEven {
     fn tick(&mut self) -> &Status {
         if *self.x.borrow() % 2 == 0 {
             println!("Even");
-        }
-        else {
+        } else {
             println!("Skip");
         }
         &Status::Success
@@ -205,19 +135,31 @@ impl B for PrintEven {
 }
 
 pub struct PrintOdd {
-    x: Rc<RefCell<i32>>
+    x: Rc<RefCell<i32>>,
 }
 
-impl B for PrintOdd {
+impl NodeTrait for PrintOdd {
     fn tick(&mut self) -> &Status {
         if *self.x.borrow() % 2 != 0 {
             println!("Odd");
-        }
-        else {
+        } else {
             println!("Skip");
         }
         &Status::Success
     }
+}
+
+trait A {}
+struct B {}
+impl A for B {}
+
+struct C {
+    x: u32,
+}
+impl A for C {}
+fn f(b: Box<dyn A>) {}
+enum X {
+    Duh(Box<dyn A>),
 }
 
 #[cfg(test)]
@@ -227,20 +169,18 @@ mod tests {
 
     fn test() {
         let x = Rc::new(RefCell::new(1));
-        //let state = Rc::new(RefCell::new(&x));
-        let a = Node::Leaf(Rc::new(RefCell::new(PrintOdd { x:x.clone() })));
-        let b = Node::Leaf(Rc::new(RefCell::new(PrintEven { x:x.clone() })));
-        let children = vec![a, b];
-        //let root = Rc::new(RefCell::new(Sequence::<&u32>::new(children)));
+
         let mut bt = BehaviorTree::new();
-        let mut root = Node::Branch(Sequence::new(children));
+        let mut root = sequence(vec![
+            action(PrintOdd { x: x.clone() }),
+            action(PrintEven { x: x.clone() }),
+        ]);
         bt.start(&mut root);
         loop {
-            while bt.step() {                
-            }            
+            while bt.step() {}
             let c = x.clone();
-                let mut v = c.borrow_mut();
-                *v += 1;
+            let mut v = c.borrow_mut();
+            *v += 1;
             //let y = rf.borrow();
             //println!("{:?}", y);
             bt.start(&mut root);
