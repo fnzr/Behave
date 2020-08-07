@@ -35,6 +35,12 @@ where
     Sequence::new(nodes)
 }
 
+pub fn selector(nodes: Vec<Node>) -> Node
+where
+{
+    Selector::new(nodes)
+}
+
 pub struct Sequence {
     children: Vec<Node>,
     current_child: usize,
@@ -76,6 +82,51 @@ impl NodeTrait for Sequence {
             }
         } else {
             self.status = result.clone();
+        }
+    }
+}
+
+pub struct Selector {
+    children: Vec<Node>,
+    current_child: usize,
+    status: Status,
+}
+
+impl Selector {
+    fn new(children: Vec<Node>) -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(Selector {
+            children,
+            current_child: 0,
+            status: Status::Invalid,
+        }))
+    }
+}
+
+impl NodeTrait for Selector {
+    fn initialize(&mut self, bt: &mut BehaviorTree, self_rc: Node) {
+        if let Some(child) = self.children.get(0) {
+            enqueue_node(bt, child, Some(self_rc));
+            self.status = Status::Running;
+            self.current_child = 0;
+        } else {
+            self.status = Status::Invalid;
+        }
+    }
+
+    fn tick(&mut self) -> &Status {
+        &self.status
+    }
+
+    fn on_child_complete(&mut self, result: &Status, bt: &mut BehaviorTree, self_rc: Node) {
+        if result != &Status::Success {
+            self.current_child += 1;
+            if let Some(child) = self.children.get_mut(self.current_child) {
+                enqueue_node(bt, child, Some(self_rc));
+            } else {
+                self.status = result.clone();
+            }
+        } else {
+            self.status = Status::Success;
         }
     }
 }
@@ -127,10 +178,10 @@ impl NodeTrait for PrintEven {
     fn tick(&mut self) -> &Status {
         if *self.x.borrow() % 2 == 0 {
             println!("Even");
+            &Status::Success
         } else {
-            println!("Skip");
+            &Status::Failure
         }
-        &Status::Success
     }
 }
 
@@ -142,10 +193,10 @@ impl NodeTrait for PrintOdd {
     fn tick(&mut self) -> &Status {
         if *self.x.borrow() % 2 != 0 {
             println!("Odd");
+            &Status::Success
         } else {
-            println!("Skip");
+            &Status::Failure
         }
-        &Status::Success
     }
 }
 
@@ -171,12 +222,12 @@ mod tests {
         let x = Rc::new(RefCell::new(1));
 
         let mut bt = BehaviorTree::new();
-        let mut root = sequence(vec![
+        let mut root = selector(vec![
             action(PrintOdd { x: x.clone() }),
             action(PrintEven { x: x.clone() }),
         ]);
         bt.start(&mut root);
-        loop {
+        for _ in 1..10 {
             while bt.step() {}
             let c = x.clone();
             let mut v = c.borrow_mut();
