@@ -7,7 +7,7 @@ pub fn action(node: impl Behavior + 'static) -> Node {
     Rc::new(RefCell::new(node))
 }
 
-pub fn pure_action(action: fn()) -> Node {
+pub fn pure_action(action: fn() -> Status) -> Node {
     Rc::new(RefCell::new(nodes::Action {
         status: Status::Invalid,
         action,
@@ -46,6 +46,8 @@ pub fn parallel(
         status: Status::Invalid,
         success_policy,
         failure_policy,
+        success_count: 0,
+        failure_count: 0,
     }))
 }
 
@@ -60,12 +62,16 @@ impl BehaviorTree {
         }
     }
     pub fn start(&mut self, root: Node) {
-        enqueue_node(self, &root, None);
+        self.events.push_back((root.clone(), None));
+        root.borrow_mut().initialize(self, root.clone());
     }
 
     pub fn step(&mut self) -> bool {
         if let Some((node, opt_parent)) = self.events.pop_front() {
             let mut tmp = node.borrow_mut();
+            if tmp.status() == &Status::Aborted {
+                return true;
+            }
             let result = tmp.tick();
             let new_node = node.clone();
 
@@ -96,15 +102,7 @@ pub trait Behavior {
 
     fn status(&self) -> &Status;
 
-    fn abort(&mut self) {
-        self.terminate()
-    }
-}
-
-fn enqueue_node(bt: &mut BehaviorTree, node: &Node, parent_rc: Option<Node>) {
-    let mut tmp = node.borrow_mut();
-    tmp.initialize(bt, node.clone());
-    bt.events.push_back((node.clone(), parent_rc));
+    fn abort(&mut self);
 }
 
 #[derive(PartialEq, Copy, Clone, Debug)]
@@ -113,49 +111,60 @@ pub enum Status {
     Running,
     Success,
     Failure,
+    Aborted,
 }
 
 pub struct PrintEven {
     x: Rc<RefCell<i32>>,
+    status: Status,
 }
 
 impl Behavior for PrintEven {
     fn tick(&mut self) -> &Status {
         if *self.x.borrow() % 2 == 0 {
-            println!("Even");
-            &Status::Success
+            print!("Even");
+            self.status = Status::Success
         } else {
-            &Status::Failure
+            self.status = Status::Failure
         }
+        &self.status
+    }
+
+    fn initialize(&mut self, bt: &mut BehaviorTree, self_rc: Node) {}
+
+    fn status(&self) -> &Status {
+        &self.status
+    }
+
+    fn abort(&mut self) {
+        self.status = Status::Aborted
     }
 }
 
 pub struct PrintOdd {
     x: Rc<RefCell<i32>>,
+    status: Status,
 }
 
 impl Behavior for PrintOdd {
     fn tick(&mut self) -> &Status {
         if *self.x.borrow() % 2 != 0 {
-            println!("Odd");
+            print!("Odd");
             &Status::Success
         } else {
             &Status::Failure
         }
     }
-}
 
-trait A {}
-struct B {}
-impl A for B {}
+    fn initialize(&mut self, bt: &mut BehaviorTree, self_rc: Node) {}
 
-struct C {
-    x: u32,
-}
-impl A for C {}
-fn f(b: Box<dyn A>) {}
-enum X {
-    Duh(Box<dyn A>),
+    fn status(&self) -> &Status {
+        &self.status
+    }
+
+    fn abort(&mut self) {
+        self.status = Status::Aborted
+    }
 }
 
 #[cfg(test)]
@@ -166,21 +175,36 @@ mod tests {
     fn test() {
         let x = Rc::new(RefCell::new(1));
 
-        let a = pure_action(|| print!("hey"));
+        let a = pure_action(|| {
+            print!("hey");
+            Status::Success
+        });
 
         let mut bt = BehaviorTree::new();
-        let mut root = selector(vec![
-            action(PrintOdd { x: x.clone() }),
-            action(PrintEven { x: x.clone() }),
-        ]);
+        let root = parallel(
+            nodes::ParallelPolicy::One,
+            nodes::ParallelPolicy::All,
+            vec![
+                a,
+                action(PrintOdd {
+                    x: x.clone(),
+                    status: Status::Invalid,
+                }),
+                action(PrintEven {
+                    x: x.clone(),
+                    status: Status::Invalid,
+                }),
+            ],
+        );
         bt.start(root.clone());
         for _ in 1..10 {
             while bt.step() {}
             let c = x.clone();
             let mut v = c.borrow_mut();
             *v += 1;
+            print!("\n");
             //let y = rf.borrow();
-            //println!("{:?}", y);
+            //println!("{:?}", v);
             bt.start(root.clone());
         }
     }

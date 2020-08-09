@@ -1,7 +1,7 @@
 use crate::{Behavior, BehaviorTree, Node, Status};
 pub struct Action {
-    status: Status,
-    action: fn(),
+    pub status: Status,
+    pub action: fn() -> Status,
 }
 
 impl Behavior for Action {
@@ -14,7 +14,11 @@ impl Behavior for Action {
     }
 
     fn tick(&mut self) -> &Status {
-        (self.action)();
+        self.status = (self.action)();
         &self.status
+    }
+
+    fn abort(&mut self) {
+        self.status = Status::Aborted
     }
 }

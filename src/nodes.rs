@@ -30,6 +30,10 @@ impl ChildrenNodes {
         node
     }
 
+    pub fn get(&mut self) -> Option<&Node> {
+        self.nodes.get(self.next_child)
+    }
+
     pub fn reset(&mut self) {
         self.next_child = 0
     }
