@@ -24,10 +24,6 @@ impl Behavior for Selector {
         let child_rc = self.children.get(self.current_child as usize).unwrap();
         let child = child_rc.borrow();
         match child.status {
-            Status::Running => {
-                bt.events.push_back(child_rc.clone());
-                Status::Running
-            }
             Status::Success => Status::Success,
             result_status => {
                 self.current_child += 1;

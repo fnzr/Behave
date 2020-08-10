@@ -37,10 +37,6 @@ impl Behavior for Sequence {
                     Status::Success
                 }
             }
-            Status::Running => {
-                bt.events.push_back(child_rc.clone());
-                Status::Running
-            }
             result_status => result_status,
         }
     }
