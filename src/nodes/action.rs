@@ -1,24 +1,18 @@
-use crate::{Behavior, BehaviorTree, Node, Status};
+use crate::{Behavior, BehaviorTree, Status};
 pub struct Action {
-    pub status: Status,
     pub action: fn() -> Status,
 }
 
 impl Behavior for Action {
-    fn initialize(&mut self, bt: &mut BehaviorTree, rc: Node) {
-        self.status = Status::Running
+    fn initialize(&mut self, _bt: &mut BehaviorTree) -> Status {
+        Status::Running
     }
 
-    fn status(&self) -> &Status {
-        &self.status
+    fn tick(&mut self, _bt: &mut BehaviorTree) -> Status {
+        (self.action)()
     }
 
-    fn tick(&mut self) -> &Status {
-        self.status = (self.action)();
-        &self.status
-    }
-
-    fn abort(&mut self) {
-        self.status = Status::Aborted
+    fn abort(&mut self, _bt: &mut BehaviorTree) -> Status {
+        Status::Aborted
     }
 }

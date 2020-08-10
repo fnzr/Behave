@@ -1,53 +1,55 @@
-use crate::nodes::{Behavior, ChildrenNodes, Node, Status};
+use crate::nodes::{Behavior, Node, Status};
 use crate::BehaviorTree;
 
 pub struct Selector {
-    pub children: ChildrenNodes,
-    pub status: Status,
+    pub children: Vec<Node>,
+    pub current_child: u16,
 }
 
 impl Selector {}
 
 impl Behavior for Selector {
-    fn initialize(&mut self, bt: &mut BehaviorTree, rc: Node) {
-        self.children.reset();
-        if let Some(child) = self.children.next() {
-            bt.events.push_back((child.clone(), Some(rc.clone())));
-            child.borrow_mut().initialize(bt, rc);
-            self.status = Status::Running;
+    fn initialize(&mut self, bt: &mut BehaviorTree) -> Status {
+        self.current_child = 0;
+        if let Some(child_rc) = self.children.get(0) {
+            child_rc.borrow_mut().initialize(bt);
+            bt.events.push_back(child_rc.clone());
+            Status::Running
         } else {
-            self.status = Status::Failure;
+            Status::Failure
         }
     }
 
-    fn tick(&mut self) -> &Status {
-        &self.status
+    fn tick(&mut self, bt: &mut BehaviorTree) -> Status {
+        let child_rc = self.children.get(self.current_child as usize).unwrap();
+        let child = child_rc.borrow();
+        match child.status {
+            Status::Running => {
+                bt.events.push_back(child_rc.clone());
+                Status::Running
+            }
+            Status::Success => Status::Success,
+            result_status => {
+                self.current_child += 1;
+                if let Some(next_child_rc) = self.children.get(self.current_child as usize) {
+                    next_child_rc.borrow_mut().initialize(bt);
+                    bt.events.push_back(next_child_rc.clone());
+                    Status::Running
+                } else {
+                    result_status.clone()
+                }
+            }
+        }
     }
 
-    fn status(&self) -> &Status {
-        &self.status
-    }
-
-    fn abort(&mut self) {
-        if let Some(child_rc) = self.children.get() {
+    fn abort(&mut self, bt: &mut BehaviorTree) -> Status {
+        let mut status = Status::Aborted;
+        if let Some(child_rc) = self.children.get(self.current_child as usize) {
             let mut child = child_rc.borrow_mut();
-            if child.status() == &Status::Running {
-                child.abort();
+            if child.status == Status::Running {
+                status = child.abort(bt).clone();
             }
         }
-        self.status = Status::Aborted;
-    }
-
-    fn on_child_complete(&mut self, result: &Status, bt: &mut BehaviorTree, rc: Node) {
-        if result != &Status::Success {
-            if let Some(child) = self.children.next() {
-                bt.events.push_back((child.clone(), Some(rc.clone())));
-                child.borrow_mut().initialize(bt, rc);
-            } else {
-                self.status = result.clone();
-            }
-        } else {
-            self.status = Status::Success;
-        }
+        status
     }
 }

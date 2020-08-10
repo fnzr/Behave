@@ -1,28 +1,40 @@
 use crate::{Behavior, BehaviorTree, Node, Status};
 
-pub struct Decorator {
-    pub status: Status,
-    pub child: Node,
-    pub decoration: fn(&mut Decorator, Node) -> Status,
+pub struct Repeater {
+    pub node: Node,
+    pub repeat_for: u32,
+    pub current_loop: u32,
 }
 
-impl Behavior for Decorator {
-    fn initialize(&mut self, bt: &mut BehaviorTree, rc: Node) {
-        self.status = Status::Running;
-        self.child.borrow_mut().initialize(bt, self.child.clone());
+impl Behavior for Repeater {
+    fn initialize(&mut self, bt: &mut BehaviorTree) -> Status {
+        self.current_loop = 0;
+        bt.events.push_back(self.node.clone());
+        self.node.borrow_mut().initialize(bt);
+        Status::Running
     }
 
-    fn status(&self) -> &Status {
-        &self.status
+    fn tick(&mut self, bt: &mut BehaviorTree) -> Status {
+        let mut node = self.node.borrow_mut();
+        match node.status {
+            Status::Running => {
+                bt.events.push_back(self.node.clone());
+                Status::Running
+            }
+            child_status => {
+                self.current_loop += 1;
+                if self.current_loop < self.repeat_for {
+                    bt.events.push_back(self.node.clone());
+                    node.initialize(bt);
+                    Status::Running
+                } else {
+                    child_status
+                }
+            }
+        }
     }
 
-    fn tick(&mut self) -> &Status {
-        self.status = (self.decoration)(self, self.child.clone());
-        &self.status
-    }
-
-    fn abort(&mut self) {
-        self.child.borrow_mut().abort();
-        self.status = Status::Aborted;
+    fn abort(&mut self, bt: &mut BehaviorTree) -> Status {
+        self.node.borrow_mut().abort(bt).clone()
     }
 }
