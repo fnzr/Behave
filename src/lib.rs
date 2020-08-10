@@ -92,11 +92,12 @@ impl BehaviorTree {
 type Node = Rc<RefCell<dyn Behavior>>;
 
 pub trait Behavior {
-    fn initialize(&mut self, bt: &mut BehaviorTree, self_rc: Node);
+    fn initialize(&mut self, bt: &mut BehaviorTree, rc: Node);
 
     fn terminate(&mut self) {}
 
-    fn on_child_complete(&mut self, status: &Status, bt: &mut BehaviorTree, self_rc: Node) {}
+    #[allow(dead_code)]
+    fn on_child_complete(&mut self, status: &Status, bt: &mut BehaviorTree, rc: Node) {}
 
     fn tick(&mut self) -> &Status;
 
@@ -130,7 +131,8 @@ impl Behavior for PrintEven {
         &self.status
     }
 
-    fn initialize(&mut self, bt: &mut BehaviorTree, self_rc: Node) {}
+    #[allow(dead_code)]
+    fn initialize(&mut self, bt: &mut BehaviorTree, rc: Node) {}
 
     fn status(&self) -> &Status {
         &self.status
@@ -156,7 +158,7 @@ impl Behavior for PrintOdd {
         }
     }
 
-    fn initialize(&mut self, bt: &mut BehaviorTree, self_rc: Node) {}
+    fn initialize(&mut self, bt: &mut BehaviorTree, rc: Node) {}
 
     fn status(&self) -> &Status {
         &self.status

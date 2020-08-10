@@ -7,7 +7,7 @@ pub struct Decorator {
 }
 
 impl Behavior for Decorator {
-    fn initialize(&mut self, bt: &mut BehaviorTree, self_rc: Node) {
+    fn initialize(&mut self, bt: &mut BehaviorTree, rc: Node) {
         self.status = Status::Running;
         self.child.borrow_mut().initialize(bt, self.child.clone());
     }

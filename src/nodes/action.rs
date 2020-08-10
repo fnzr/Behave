@@ -5,7 +5,7 @@ pub struct Action {
 }
 
 impl Behavior for Action {
-    fn initialize(&mut self, bt: &mut BehaviorTree, self_rc: Node) {
+    fn initialize(&mut self, bt: &mut BehaviorTree, rc: Node) {
         self.status = Status::Running
     }
 

@@ -13,11 +13,11 @@ impl Sequence {
 }
 
 impl Behavior for Sequence {
-    fn initialize(&mut self, bt: &mut BehaviorTree, self_rc: Node) {
+    fn initialize(&mut self, bt: &mut BehaviorTree, rc: Node) {
         self.children.reset();
         if let Some(child) = self.children.next() {
-            bt.events.push_back((child.clone(), Some(self_rc.clone())));
-            child.borrow_mut().initialize(bt, self_rc);
+            bt.events.push_back((child.clone(), Some(rc.clone())));
+            child.borrow_mut().initialize(bt, rc);
             self.status = Status::Running;
         } else {
             self.status = Status::Failure;
@@ -42,11 +42,11 @@ impl Behavior for Sequence {
         self.status = Status::Aborted;
     }
 
-    fn on_child_complete(&mut self, result: &Status, bt: &mut BehaviorTree, self_rc: Node) {
+    fn on_child_complete(&mut self, result: &Status, bt: &mut BehaviorTree, rc: Node) {
         if result == &Status::Success {
             if let Some(child) = self.children.next() {
-                bt.events.push_back((child.clone(), Some(self_rc.clone())));
-                child.borrow_mut().initialize(bt, self_rc);
+                bt.events.push_back((child.clone(), Some(rc.clone())));
+                child.borrow_mut().initialize(bt, rc);
             } else {
                 self.status = Status::Success;
             }
@@ -54,4 +54,13 @@ impl Behavior for Sequence {
             self.status = result.clone();
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+
+    struct A {}
+
+    #[test]
+    fn test_sequence() {}
 }
