@@ -21,7 +21,7 @@ pub fn repeater(node: Node, repeat_for: u32) -> Node {
     }))
 }
 
-pub fn pure_action(action: fn() -> Status) -> Node {
+pub fn pure_action(action: Box<dyn FnMut() -> Status>) -> Node {
     Rc::new(RefCell::new(NodeWrapper {
         behavior: Box::new(Action { action }),
         status: Status::Invalid,

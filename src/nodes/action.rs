@@ -1,6 +1,6 @@
 use crate::{Behavior, BehaviorTree, Status};
 pub struct Action {
-    pub action: fn() -> Status,
+    pub action: Box<dyn FnMut() -> Status>,
 }
 
 impl Behavior for Action {

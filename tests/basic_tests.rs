@@ -11,11 +11,13 @@ mod decorator {
     fn repeater() {
         let x = Rc::new(RefCell::new(0));
         let x_clone = x.clone();
-        let action = helpers::pure_action(move || {
-            let a = *x_clone.borrow_mut();
-            //a += 1;
+        let action = helpers::pure_action(Box::new(move || {
+            x_clone.replace_with(|v| *v + 1);
             Status::Success
-        });
+        }));
+        let mut bt = BehaviorTree::new(helpers::repeater(action, 3));
+        bt.run();
+        assert_eq!(*x.borrow(), 3);
     }
 }
 

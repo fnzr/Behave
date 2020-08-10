@@ -4,16 +4,16 @@ use event_behavior_tree::helpers::*;
 use event_behavior_tree::*;
 
 pub fn succeed() -> Node {
-    pure_action(|| Status::Success)
+    pure_action(Box::new(|| Status::Success))
 }
 
 pub fn fail() -> Node {
-    pure_action(|| Status::Failure)
+    pure_action(Box::new(|| Status::Failure))
 }
 
 pub fn panic() -> Node {
-    pure_action(|| {
+    pure_action(Box::new(|| {
         assert!(false);
         Status::Failure
-    })
+    }))
 }
