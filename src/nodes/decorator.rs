@@ -8,7 +8,7 @@ pub struct Repeater {
 
 impl Behavior for Repeater {
     fn initialize(&mut self, bt: &mut BehaviorTree) -> Status {
-        self.current_loop = 1;
+        self.current_loop = 0;
         bt.events.push_back(self.node.clone());
         self.node.borrow_mut().initialize(bt);
         Status::Running
