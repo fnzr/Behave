@@ -14,7 +14,6 @@ pub use decorator::*;
 //pub use parallel::*;
 pub use selector::*;
 pub use sequence::*;
-
 pub struct ChildrenNodes {
     nodes: Vec<Node>,
     next_child: usize,
