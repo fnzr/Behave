@@ -1,4 +1,5 @@
-use crate::{Behavior, BehaviorTree, Node, Status};
+use crate::{Behavior, BehaviorTree, Node, Status, Tree};
+use std::collections::VecDeque;
 
 pub struct Sequence {
     pub children: Vec<u16>,
@@ -16,8 +17,7 @@ impl Behavior for Sequence {
         self.current_child = 0;
         if let Some(child) = self.children.get(0) {
             bt.events.push_back(child.clone());
-            let mut node = &bt.nodes[child.clone() as usize];
-            node.initialize(bt);
+            bt.node(child).borrow_mut().initialize(bt);
             Status::Running
         } else {
             Status::Invalid
@@ -26,14 +26,15 @@ impl Behavior for Sequence {
 
     fn tick(&mut self, bt: &mut BehaviorTree) -> Status {
         let child_index = self.children.get(self.current_child as usize).unwrap();
-        let mut child = bt.nodes[child_index.clone() as usize];
-        match child.status {
+        match bt.node(child_index).borrow().status {
             Status::Success => {
                 self.current_child += 1;
                 if let Some(next_child) = self.children.get(self.current_child as usize) {
                     bt.events.push_back(next_child.clone());
-                    let mut node = bt.nodes[next_child.clone() as usize];
+                    let next_rc = bt.node(next_child);
+                    let mut node = next_rc.borrow_mut();
                     node.initialize(bt);
+                    let u: u16 = 1;
                     Status::Running
                 } else {
                     Status::Success
@@ -44,13 +45,15 @@ impl Behavior for Sequence {
     }
 
     fn abort(&mut self, bt: &mut BehaviorTree) -> Status {
+        /*
         let mut status = Status::Aborted;
-        if let Some(child_rc) = self.children.get(self.current_child as usize) {
-            let mut child = &bt.nodes[child_rc.clone() as usize];
+        if let Some(index) = self.children.get(self.current_child as usize) {
+            let mut child = bt.node(index).borrow_mut();
             if child.status == Status::Running {
                 status = child.abort(bt).clone()
             }
         }
-        status
+        */
+        Status::Aborted
     }
 }
