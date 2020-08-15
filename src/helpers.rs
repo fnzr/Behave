@@ -51,3 +51,10 @@ pub fn selector(children_builder: Vec<Box<NodeBuilder>>) -> Box<NodeBuilder> {
         selector
     })
 }
+
+pub fn repeater(node_builder: Box<NodeBuilder>, repeat_count: i32) -> Box<NodeBuilder> {
+    Box::new(move |on_complete| -> Node {
+        let node = node_builder(None);
+        Rc::new(RefCell::new(Repeater::new(node, repeat_count, on_complete)))
+    })
+}

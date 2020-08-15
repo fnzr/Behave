@@ -1,10 +1,10 @@
-extern crate event_behavior_tree;
+extern crate behave;
 mod action;
 
 mod sequence {
     use crate::action::CallCounterAction;
-    use event_behavior_tree::helpers::*;
-    use event_behavior_tree::*;
+    use behave::helpers::*;
+    use behave::*;
     use std::cell::RefCell;
     use std::rc::Rc;
 
@@ -46,8 +46,8 @@ mod sequence {
 
 mod selector {
     use crate::action::CallCounterAction;
-    use event_behavior_tree::helpers::*;
-    use event_behavior_tree::*;
+    use behave::helpers::*;
+    use behave::*;
     use std::cell::RefCell;
     use std::rc::Rc;
 
@@ -84,5 +84,21 @@ mod selector {
             action(|| Status::Success),
         ]));
         assert_eq!(Status::Success, tree.run())
+    }
+}
+
+mod decorators {
+    use crate::action::CallCounterAction;
+    use behave::helpers::*;
+    use behave::*;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    #[test]
+    pub fn repeater_count() {
+        let a = Rc::new(RefCell::new(CallCounterAction::new(Status::Success)));
+        let mut tree = Tree::new(repeater(custom(a.clone()), 3));
+        assert_eq!(Status::Success, tree.run());
+        assert_eq!(a.borrow().call_count, 3);
     }
 }

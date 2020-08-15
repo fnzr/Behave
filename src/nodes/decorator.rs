@@ -1,42 +1,57 @@
-/*
-use crate::{Behavior, BehaviorTree, Node, Status};
+use crate::{Behavior, FnOnComplete, Node, Status};
+use std::collections::VecDeque;
 
 pub struct Repeater {
     pub node: Node,
-    pub repeat_for: u32,
-    pub current_loop: u32,
+    pub repeat_for: i32,
+    pub current_loop: i32,
+    pub status: Status,
+    pub on_complete_cb: FnOnComplete,
+}
+
+impl Repeater {
+    pub fn new(node: Node, repeat_for: i32, on_complete: FnOnComplete) -> Self {
+        Self {
+            node,
+            repeat_for,
+            current_loop: 0,
+            status: Status::Invalid,
+            on_complete_cb: on_complete,
+        }
+    }
 }
 
 impl Behavior for Repeater {
-    fn initialize(&mut self, bt: &mut BehaviorTree) -> Status {
-        self.current_loop = 0;
-        bt.events.push_back(self.node.clone());
-        self.node.borrow_mut().initialize(bt);
-        Status::Running
+    fn status(&self) -> Status {
+        self.status
     }
 
-    fn tick(&mut self, bt: &mut BehaviorTree) -> Status {
+    fn initialize(&mut self, events: &mut VecDeque<Node>) {
+        self.node.borrow_mut().initialize(events);
+        self.status = Status::Running
+    }
+
+    fn update(&mut self, events: &mut VecDeque<Node>) -> Status {
         let mut node = self.node.borrow_mut();
-        match node.status {
-            Status::Running => {
-                bt.events.push_back(self.node.clone());
+        let status = node.update(events);
+        if status == Status::Running {
+            Status::Running
+        } else {
+            self.current_loop += 1;
+            if self.current_loop < self.repeat_for {
+                node.initialize(events);
                 Status::Running
-            }
-            child_status => {
-                self.current_loop += 1;
-                if self.current_loop < self.repeat_for {
-                    bt.events.push_back(self.node.clone());
-                    node.initialize(bt);
-                    Status::Running
-                } else {
-                    child_status
-                }
+            } else {
+                self.status = status;
+                status
             }
         }
     }
 
-    fn abort(&mut self, bt: &mut BehaviorTree) -> Status {
-        self.node.borrow_mut().abort(bt).clone()
+    fn on_complete(&mut self, result: Status, events: &mut VecDeque<Node>) {
+        self.status = result.clone();
+        if let Some(cb) = &mut self.on_complete_cb {
+            cb(result, events)
+        }
     }
 }
-*/
