@@ -7,14 +7,19 @@ use std::rc::Rc;
 pub struct Action {
     status: Status,
     update: Box<dyn FnMut() -> Status>,
+    on_complete_cb: FnOnComplete,
 }
 
 impl Action {
-    fn new(update: Box<dyn FnMut() -> Status>) -> Box<Self> {
-        Box::new(Self {
+    fn new<T>(update: Box<T>, on_complete_cb: FnOnComplete) -> Self
+    where
+        T: FnMut() -> Status + Copy + 'static,
+    {
+        Self {
             update,
+            on_complete_cb,
             status: Status::Invalid,
-        })
+        }
     }
 }
 
@@ -23,47 +28,71 @@ impl Behavior for Action {
         self.status
     }
 
-    fn index(&self) -> i16 {
-        0
-    }
-
-    fn update(&mut self, _: &mut VecDeque<Event>) -> Status {
+    fn update(&mut self, _: &mut VecDeque<Node>) -> Status {
         self.status = (self.update)();
         self.status.clone()
     }
+
+    fn on_complete(&mut self, result: Status, events: &mut VecDeque<Node>) {
+        if let Some(cb) = &mut self.on_complete_cb {
+            cb(result, events)
+        }
+    }
 }
 
-pub type Event = (i16, Option<i16>);
-
 pub struct Sequence {
-    children: Vec<i16>,
+    children: Vec<Node>,
     current_child: i16,
     status: Status,
-    index: i16,
+    on_complete_cb: FnOnComplete,
+}
+
+impl Sequence {
+    pub fn new(on_complete_cb: FnOnComplete) -> Self {
+        Self {
+            children: vec![],
+            current_child: 0,
+            status: Status::Invalid,
+            on_complete_cb,
+        }
+    }
 }
 
 impl Behavior for Sequence {
-    fn initialize(&mut self, events: &mut VecDeque<Event>) {
+    fn initialize(&mut self, events: &mut VecDeque<Node>) {
+        self.current_child = 0;
         if let Some(child) = self.children.get(0) {
-            events.push_back((child.clone(), Some(self.index)));
+            events.push_back(child.clone());
+            child.borrow_mut().initialize(events);
             self.status = Status::Running
         } else {
             self.status = Status::Failure
         }
     }
 
-    fn child_complete(&mut self, result: Status, events: &mut VecDeque<Event>) {
+    fn on_complete(&mut self, result: Status, events: &mut VecDeque<Node>) {
+        if let Some(cb) = &mut self.on_complete_cb {
+            cb(result, events)
+        }
+    }
+
+    fn child_complete(&mut self, result: Status, events: &mut VecDeque<Node>) {
         match result {
             Status::Success => {
                 self.current_child += 1;
                 if let Some(child) = self.children.get(self.current_child as usize) {
-                    events.push_back((child.clone(), Some(self.index)));
-                    Status::Running
+                    events.push_back(child.clone());
+                    child.borrow_mut().initialize(events);
+                    self.status = Status::Running
                 } else {
-                    Status::Success
+                    self.on_complete(result, events);
+                    self.status = Status::Success
                 }
             }
-            Status::Failure => Status::Failure,
+            Status::Failure => {
+                self.on_complete(result, events);
+                self.status = Status::Failure
+            }
             _ => panic!("Invalid result: {:?}", &result),
         };
     }
@@ -71,41 +100,41 @@ impl Behavior for Sequence {
     fn status(&self) -> Status {
         self.status.clone()
     }
-
-    fn index(&self) -> i16 {
-        self.index
-    }
 }
 
 pub struct Tree {
-    events: VecDeque<Event>,
-    nodes: Vec<Box<dyn Behavior>>,
+    events: VecDeque<Node>,
+    root: Node,
 }
 
 impl Tree {
-    pub fn new(mut nodes: Vec<Box<dyn Behavior>>) -> Self {
-        nodes.shrink_to_fit();
+    pub fn new(mut tree_builder: Box<NodeBuilder>) -> Self {
         Self {
-            events: VecDeque::<Event>::new(),
-            nodes,
+            events: VecDeque::<Node>::new(),
+            root: tree_builder(None),
         }
     }
+
+    pub fn run(&mut self) -> Status {
+        self.events.clear();
+        self.events.push_back(self.root.clone());
+        self.root.borrow_mut().initialize(&mut self.events);
+        while self.step() {}
+        self.root.borrow().status()
+    }
+
     pub fn step(&mut self) -> bool {
-        if let Some((node_key, opt_parent_key)) = self.events.pop_front() {
-            let node = &mut self.nodes[node_key as usize];
+        if let Some(node_rc) = self.events.pop_front() {
+            let mut node = node_rc.borrow_mut();
             if node.status() == Status::Aborted {
                 return true;
-            } else if node.status() != Status::Running {
-                node.initialize(&mut self.events);
             }
             let status = node.update(&mut self.events);
             if status == Status::Failure || status == Status::Success {
-                if let Some(parent_key) = opt_parent_key {
-                    let parent = &mut self.nodes[parent_key as usize];
-                    parent.child_complete(status, &mut self.events);
-                }
+                node.on_complete(status, &mut self.events);
             } else if status == Status::Running {
-                self.events.push_back((node_key, opt_parent_key));
+                drop(node);
+                self.events.push_back(node_rc);
             }
             true
         } else {
@@ -114,49 +143,46 @@ impl Tree {
     }
 }
 
-pub struct TreeBuilder {
-    nodes: Vec<Box<dyn Behavior>>,
+type FnOnComplete = Option<Box<dyn FnMut(Status, &mut VecDeque<Node>) + 'static>>;
+type Node = Rc<RefCell<dyn Behavior>>;
+type NodeBuilder = dyn FnMut(FnOnComplete) -> Node;
+
+pub fn action<T>(update: T) -> Box<NodeBuilder>
+where
+    T: FnMut() -> Status + Copy + 'static,
+{
+    Box::new(move |on_complete| -> Node {
+        Rc::new(RefCell::new(Action::new(Box::new(update), on_complete)))
+    })
 }
 
-impl TreeBuilder {
-    pub fn new() -> Self {
-        Self { nodes: vec![] }
-    }
-
-    pub fn builder(self) -> Tree {
-        Tree::new(self.nodes)
-    }
-
-    pub fn action(&mut self, behavior: Box<dyn Behavior>) -> i16 {
-        let index = self.nodes.len();
-        self.nodes.push(behavior);
-        index as i16
-    }
-
-    pub fn sequence(&mut self, children: Vec<i16>) -> i16 {
-        let index = self.nodes.len() as i16;
-        self.nodes.push(Box::new(Sequence {
-            children: children,
-            index,
-            current_child: 0,
-            status: Status::Invalid,
-        }));
-        index
-    }
+pub fn sequence(mut children_builder: Vec<Box<NodeBuilder>>) -> Box<NodeBuilder> {
+    Box::new(move |on_complete| -> Node {
+        let sequence = Rc::new(RefCell::new(Sequence::new(on_complete)));
+        let mut children = Vec::with_capacity(children_builder.len());
+        for child_builder in children_builder.iter_mut() {
+            let seq = sequence.clone();
+            children.push((child_builder)(Some(Box::new(move |status, events| {
+                seq.borrow_mut().child_complete(status, events);
+            }))));
+        }
+        sequence.borrow_mut().children = children;
+        sequence
+    })
 }
 
 pub trait Behavior {
-    fn initialize(&mut self, events: &mut VecDeque<Event>) {}
+    fn initialize(&mut self, events: &mut VecDeque<Node>) {}
 
-    fn update(&mut self, events: &mut VecDeque<Event>) -> Status {
+    fn update(&mut self, events: &mut VecDeque<Node>) -> Status {
         self.status()
     }
 
     fn status(&self) -> Status;
 
-    fn index(&self) -> i16;
+    fn child_complete(&mut self, result: Status, events: &mut VecDeque<Node>) {}
 
-    fn child_complete(&mut self, result: Status, events: &mut VecDeque<Event>) {}
+    fn on_complete(&mut self, result: Status, events: &mut VecDeque<Node>);
 
     fn abort(&mut self) -> Status {
         Status::Aborted
@@ -166,7 +192,6 @@ pub trait Behavior {
 #[derive(PartialEq, Copy, Clone, Debug)]
 pub enum Status {
     Invalid,
-    Delegated,
     Running,
     Success,
     Failure,
@@ -180,9 +205,8 @@ mod tests {
 
     #[test]
     fn test() {
-        let mut builder = TreeBuilder::new();
-        let root = builder.sequence(vec![
-            builder.action(Action::new(Box::new(|| Status::Success)))
-        ]);
+        let tree_builder = sequence(vec![action(|| Status::Success), action(|| Status::Failure)]);
+        let mut tree = Tree::new(tree_builder);
+        println!("{:?}", tree.run());
     }
 }
