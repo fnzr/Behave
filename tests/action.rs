@@ -1,5 +1,5 @@
-extern crate event_behavior_tree;
-use event_behavior_tree::*;
+extern crate behave;
+use behave::*;
 use std::collections::VecDeque;
 
 pub struct CallCounterAction {

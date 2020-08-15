@@ -1,5 +1,5 @@
 [package]
-name = "event_behavior_tree"
+name = "behave"
 version = "0.1.0"
 authors = ["fnzr <5471818+fnzr@users.noreply.github.com>"]
 edition = "2018"

@@ -49,15 +49,15 @@ impl Tree {
 }
 
 pub trait Behavior {
-    fn initialize(&mut self, events: &mut VecDeque<Node>) {}
+    fn initialize(&mut self, _: &mut VecDeque<Node>) {}
 
-    fn update(&mut self, events: &mut VecDeque<Node>) -> Status {
+    fn update(&mut self, _: &mut VecDeque<Node>) -> Status {
         self.status()
     }
 
     fn status(&self) -> Status;
 
-    fn child_complete(&mut self, result: Status, events: &mut VecDeque<Node>) {}
+    fn child_complete(&mut self, _: Status, _: &mut VecDeque<Node>) {}
 
     fn on_complete(&mut self, result: Status, events: &mut VecDeque<Node>);
 
