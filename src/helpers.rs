@@ -1,54 +1,53 @@
 use crate::nodes::*;
-use crate::{Behavior, Node, NodeWrapper, Status};
+use crate::{Behavior, CustomBehavior, Node, NodeBuilder, Status};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-/*
-pub fn action(node: Box<dyn Behavior>) -> Node {
-    Rc::new(RefCell::new(NodeWrapper::new(node)))
+pub fn action<T>(update: T) -> Box<NodeBuilder>
+where
+    T: FnMut() -> Status + Copy + 'static,
+{
+    Box::new(move |on_complete| -> Node {
+        Rc::new(RefCell::new(Action::new(Box::new(update), on_complete)))
+    })
 }
 
-pub fn repeater(node: Node, repeat_for: u32) -> Node {
-    Rc::new(RefCell::new(NodeWrapper::new(Box::new(Repeater {
-        node,
-        repeat_for,
-        current_loop: 0,
-    }))))
+pub fn custom<B>(behavior: Rc<RefCell<B>>) -> Box<NodeBuilder>
+where
+    B: CustomBehavior + 'static,
+{
+    Box::new(move |on_complete| -> Node {
+        behavior.borrow_mut().set_on_complete(on_complete);
+        behavior
+    })
 }
 
-pub fn pure_action(action: Box<dyn FnMut() -> Status>) -> Node {
-    Rc::new(RefCell::new(NodeWrapper::new(Box::new(Action { action }))))
+pub fn sequence(children_builder: Vec<Box<NodeBuilder>>) -> Box<NodeBuilder> {
+    Box::new(move |on_complete| -> Node {
+        let sequence = Rc::new(RefCell::new(Sequence::new(on_complete)));
+        let mut children = Vec::with_capacity(children_builder.len());
+        for child_builder in children_builder.into_iter() {
+            let seq = sequence.clone();
+            children.push((child_builder)(Some(Box::new(move |status, events| {
+                seq.borrow_mut().child_complete(status, events);
+            }))));
+        }
+        sequence.borrow_mut().children = children;
+        sequence
+    })
 }
 
-pub fn sequence(nodes: Vec<Node>) -> Node {
-    let seq = NodeWrapper::new(Box::new(Sequence {
-        children: vec![],
-        current_child: 0,
-    }));
-
-    let seq_clone = seq.clone();
+pub fn selector(children_builder: Vec<Box<NodeBuilder>>) -> Box<NodeBuilder> {
+    Box::new(move |on_complete| -> Node {
+        let selector = Rc::new(RefCell::new(Selector::new(on_complete)));
+        let mut children = Vec::with_capacity(children_builder.len());
+        for child_builder in children_builder.into_iter() {
+            let sel = selector.clone();
+            children.push((child_builder)(Some(Box::new(move |status, events| {
+                sel.borrow_mut().child_complete(status, events);
+            }))));
+        }
+        selector.borrow_mut().children = children;
+        selector
+    })
 }
-
-pub fn selector(nodes: Vec<Node>) -> Node {
-    Rc::new(RefCell::new(NodeWrapper::new(Box::new(Selector {
-        children: nodes,
-        current_child: 0,
-    }))))
-}
-*/
-/*
-pub fn parallel(
-    success_policy: nodes::ParallelPolicy,
-    failure_policy: nodes::ParallelPolicy,
-    nodes: Vec<Node>,
-) -> Node {
-    Rc::new(RefCell::new(nodes::Parallel {
-        children: nodes::ChildrenNodes::new(nodes),
-        status: Status::Invalid,
-        success_policy,
-        failure_policy,
-        success_count: 0,
-        failure_count: 0,
-    }))
-}
-*/

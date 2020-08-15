@@ -1,43 +1,88 @@
 extern crate event_behavior_tree;
 mod action;
 
-mod decorator {
-    use event_behavior_tree::helpers;
-    use event_behavior_tree::{BehaviorTree, Status};
+mod sequence {
+    use crate::action::CallCounterAction;
+    use event_behavior_tree::helpers::*;
+    use event_behavior_tree::*;
     use std::cell::RefCell;
     use std::rc::Rc;
 
     #[test]
-    fn repeater() {
-        let x = Rc::new(RefCell::new(0));
-        let x_clone = x.clone();
-        let action = helpers::pure_action(Box::new(move || {
-            x_clone.replace_with(|v| *v + 1);
-            Status::Success
-        }));
-        let mut bt = BehaviorTree::new(helpers::repeater(action, 3));
-        bt.run();
-        assert_eq!(*x.borrow(), 3);
-    }
-}
+    fn exit_on_first_child_failure() {
+        let a1 = Rc::new(RefCell::new(CallCounterAction::new(Status::Success)));
+        let a2 = Rc::new(RefCell::new(CallCounterAction::new(Status::Failure)));
+        let a3 = Rc::new(RefCell::new(CallCounterAction::new(Status::Success)));
 
-mod sequence {
-    use super::action;
-    use event_behavior_tree::helpers::*;
-    use event_behavior_tree::*;
-    #[test]
-    fn fail_if_one_fail() {
-        let mut bt = BehaviorTree::new(sequence(vec![
-            action::succeed(),
-            action::fail(),
-            action::panic(),
+        let mut tree = Tree::new(sequence(vec![
+            custom(a1.clone()),
+            custom(a2.clone()),
+            custom(a3.clone()),
         ]));
-        assert_eq!(bt.run(), Status::Failure);
+        tree.run();
+
+        assert_eq!(a1.borrow().call_count, 1);
+        assert_eq!(a2.borrow().call_count, 1);
+        assert_eq!(a3.borrow().call_count, 0);
+    }
+    #[test]
+    fn fail_if_any_fail() {
+        let mut tree = Tree::new(sequence(vec![
+            action(|| Status::Success),
+            action(|| Status::Failure),
+        ]));
+        assert_eq!(Status::Failure, tree.run())
     }
 
     #[test]
     fn succeed_if_all_succeed() {
-        let mut bt = BehaviorTree::new(sequence(vec![action::succeed(), action::succeed()]));
-        assert_eq!(bt.run(), Status::Success);
+        let mut tree = Tree::new(sequence(vec![
+            action(|| Status::Success),
+            action(|| Status::Success),
+        ]));
+        assert_eq!(Status::Success, tree.run())
+    }
+}
+
+mod selector {
+    use crate::action::CallCounterAction;
+    use event_behavior_tree::helpers::*;
+    use event_behavior_tree::*;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    #[test]
+    fn exit_on_first_child_success() {
+        let a1 = Rc::new(RefCell::new(CallCounterAction::new(Status::Success)));
+        let a2 = Rc::new(RefCell::new(CallCounterAction::new(Status::Failure)));
+        let a3 = Rc::new(RefCell::new(CallCounterAction::new(Status::Success)));
+
+        let mut tree = Tree::new(selector(vec![
+            custom(a1.clone()),
+            custom(a2.clone()),
+            custom(a3.clone()),
+        ]));
+        tree.run();
+
+        assert_eq!(a1.borrow().call_count, 1);
+        assert_eq!(a2.borrow().call_count, 0);
+        assert_eq!(a3.borrow().call_count, 0);
+    }
+    #[test]
+    fn fail_if_all_fail() {
+        let mut tree = Tree::new(selector(vec![
+            action(|| Status::Failure),
+            action(|| Status::Failure),
+        ]));
+        assert_eq!(Status::Failure, tree.run())
+    }
+
+    #[test]
+    fn succeed_if_any_succeed() {
+        let mut tree = Tree::new(selector(vec![
+            action(|| Status::Failure),
+            action(|| Status::Success),
+        ]));
+        assert_eq!(Status::Success, tree.run())
     }
 }
